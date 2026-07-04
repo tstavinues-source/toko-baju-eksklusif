@@ -1,0 +1,212 @@
+/* ======================================================
+  PREMIUM LUXURY APPAREL ARC - CORE STYLESHEET
+  Designed for High-End Mobile & Desktop Experience
+  ======================================================
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Inter:wght@200;300;400;500&display=swap');
+
+/* Reset & Fondasi Utama */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent; /* Menghapus warna biru kilat saat tombol di-tap di HP */
+}
+
+html {
+  scroll-behavior: smooth;
+  background-color: #070707; /* Hitam obsidian pekat */
+}
+
+body {
+  background-color: #070707;
+  color: #E5E5E5;
+  font-family: 'Inter', sans-serif;
+  font-weight: 300;
+  line-height: 1.8;
+  letter-spacing: 0.5px;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Desain Scrollbar Eksklusif */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #070707;
+}
+::-webkit-scrollbar-thumb {
+  background: #1a1a1a;
+  border-radius: 2px;
+}
+
+/* Wadah Utama Aplikasi */
+.app-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px 24px 80px 24px;
+}
+
+/* --- HEADER / NAVIGATION AREA --- */
+.header {
+  text-align: center;
+  padding: 60px 0 40px 0;
+  margin-bottom: 40px;
+  position: relative;
+}
+
+/* Garis dekoratif mewah super tipis di bawah header */
+.header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 1px;
+  background-color: #C5A880; /* Muted Gold / Bronze */
+  transition: width 0.8s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.header h1 {
+  font-family: 'Cinzel', serif;
+  font-size: 2rem;
+  font-weight: 400;
+  color: #FFFFFF;
+  letter-spacing: 12px; /* Jarak huruf lebar khas brand haute-couture */
+  text-transform: uppercase;
+  line-height: 1.2;
+  margin-bottom: 12px;
+}
+
+.header p {
+  font-size: 10px;
+  color: #C5A880;
+  letter-spacing: 6px;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+/* --- GRID KATALOG / PRODUK --- */
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 48px 32px; /* Jarak antar produk dibuat lega agar visual bernapas */
+}
+
+/* Kartu Produk Minimalis */
+.product-card {
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: opacity 0.3s ease;
+}
+
+/* Bingkai Foto dengan Rasio Aspek Tinggi (Vogue Style) */
+.product-image-container {
+  width: 100%;
+  padding-top: 145%; /* Membuat aspek rasio foto potret tinggi yang elegan */
+  position: relative;
+  overflow: hidden;
+  background-color: #121212;
+}
+
+.product-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 1.2s cubic-bezier(0.25, 1, 0.5, 1); /* Efek zoom lambat yang sangat halus */
+}
+
+/* Efek interaksi saat kartu disentuh/di-hover */
+@media (hover: hover) {
+  .product-card:hover .product-image {
+    transform: scale(1.04);
+  }
+}
+
+/* Indikator Eksklusivitas (Subtle Tag) */
+.luxury-tag {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background-color: rgba(7, 7, 7, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(197, 168, 128, 0.3);
+  color: #C5A880;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  font-weight: 400;
+}
+
+/* --- INFORMASI PRODUK --- */
+.product-info {
+  padding: 20px 4px 0 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.product-info h2 {
+  font-family: 'Cinzel', serif;
+  font-size: 1.05rem;
+  font-weight: 400;
+  color: #FFFFFF;
+  letter-spacing: 2px;
+  margin-bottom: 6px;
+  text-align: center;
+}
+
+.product-info p {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  color: #C5A880; /* Emas redup */
+  font-weight: 400;
+  letter-spacing: 1px;
+  margin-bottom: 20px;
+}
+
+/* --- TOMBOL CHECKOUT PREMIUM --- */
+.btn-buy {
+  background-color: transparent;
+  color: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 14px 28px;
+  width: 100%;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+  transition: background-color 0.4s, color 0.4s, border-color 0.4s;
+}
+
+/* Respons saat tombol ditekan di layar sentuh HP */
+.btn-buy:active {
+  background-color: #FFFFFF;
+  color: #070707;
+  border-color: #FFFFFF;
+  transition: none; /* Instan feedback saat jari menyentuh */
+}
+
+/* Respons hover untuk desktop jika dibuka di laptop */
+@media (hover: hover) {
+  .btn-buy:hover {
+    background-color: #FFFFFF;
+    color: #070707;
+    border-color: #FFFFFF;
+  }
+}
+.size-pill.habis { opacity: 0.3; cursor: not-allowed; text-decoration: line-through; border-color: rgba(255,255,255,0.05); }
