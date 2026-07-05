@@ -9,13 +9,14 @@ const Icon = ({ path, size = 20 }) => (
 
 export default function Admin() {
   // STATE NAVIGASI & DATA
-  const [tabAktif, setTabAktif] = useState('products')
+  const [tabAktif, setTabAktif] = useState('dashboard')
   const [daftarProduk, setDaftarProduk] = useState([])
   const [daftarPesanan, setDaftarPesanan] = useState([])
   const [daftarKategori, setDaftarKategori] = useState([]) 
+  const [daftarKlik, setDaftarKlik] = useState([]) // State Baru untuk Analitik Klik
+  
   const [sedangMemuat, setSedangMemuat] = useState(true)
   const [kataKunciCari, setKataKunciCari] = useState('')
-  const [filterKategori, setFilterKategori] = useState('Semua')
   
   // STATE MODAL & PROSES
   const [modalTerbuka, setModalTerbuka] = useState(false)
@@ -35,22 +36,29 @@ export default function Admin() {
   const [linkEcommerce, setLinkEcommerce] = useState([])
   const [inputKategoriBaru, setInputKategoriBaru] = useState('')
 
-  // 1. MENGAMBIL DATA DARI SUPABASE
+  // ==========================================
+  // 1. PENGAMBILAN DATA
+  // ==========================================
   async function muatData() {
     setSedangMemuat(true)
     try {
       const { data: p } = await supabase.from('products').select('*').order('id', { ascending: false })
       const { data: o } = await supabase.from('orders').select('*').order('created_at', { ascending: false })
       const { data: k } = await supabase.from('categories').select('*').order('nama', { ascending: true })
+      const { data: c } = await supabase.from('link_clicks').select('*').order('clicked_at', { ascending: true }) // Ambil data klik
+      
       setDaftarProduk(p || [])
       setDaftarPesanan(o || [])
       setDaftarKategori(k || [])
+      setDaftarKlik(c || [])
     } catch (error) { console.error(error) } finally { setSedangMemuat(false) }
   }
 
   useEffect(() => { muatData() }, [])
 
-  // 2. KELOLA KATEGORI MASTER
+  // ==========================================
+  // 2. KELOLA MASTER KATEGORI
+  // ==========================================
   const tambahKategori = async (e) => {
     e.preventDefault()
     if (!inputKategoriBaru.trim()) return
@@ -61,7 +69,9 @@ export default function Admin() {
     if (confirm('Hapus kategori ini?')) { await supabase.from('categories').delete().eq('id', id); muatData() }
   }
 
+  // ==========================================
   // 3. KELOLA MODAL PRODUK
+  // ==========================================
   const bukaModal = (p = null) => {
     if (p) {
       setProdukEditId(p.id)
@@ -82,22 +92,30 @@ export default function Admin() {
     setFileGaleri([]); setModalTerbuka(true)
   }
 
-  // 4. KELOLA SKU (VARIAN/UKURAN/STOK)
+  // ==========================================
+  // 4. KELOLA SKU (VARIAN/UKURAN)
+  // ==========================================
   const tambahSku = () => setSkus([...skus, { id: Date.now(), varian: '', ukuran: '', stok: 1 }])
   const hapusSku = (id) => setSkus(skus.filter(s => s.id !== id))
   const ubahSku = (id, field, value) => setSkus(skus.map(s => s.id === id ? { ...s, [field]: field === 'stok' ? parseInt(value) || 0 : value } : s))
 
-  // 5. KELOLA OMNICHANNEL (E-COMMERCE)
+  // ==========================================
+  // 5. KELOLA OMNICHANNEL LINK
+  // ==========================================
   const tambahLink = () => { if(linkEcommerce.length < 3) setLinkEcommerce([...linkEcommerce, { id: Date.now(), nama: 'Shopee', url: '' }]) }
   const hapusLink = (id) => setLinkEcommerce(linkEcommerce.filter(l => l.id !== id))
   const ubahLink = (id, field, value) => setLinkEcommerce(linkEcommerce.map(l => l.id === id ? { ...l, [field]: value } : l))
 
-  // 6. KELOLA GALERI FOTO
+  // ==========================================
+  // 6. KELOLA GALERI GAMBAR
+  // ==========================================
   const tanganiPilihGambar = (e) => setFileGaleri([...fileGaleri, ...Array.from(e.target.files)])
   const hapusPratinjauLama = (index) => setPratinjauGaleri(pratinjauGaleri.filter((_, i) => i !== index))
   const hapusFileBaru = (index) => setFileGaleri(fileGaleri.filter((_, i) => i !== index))
 
-  // 7. GENERATOR AI GEMINI
+  // ==========================================
+  // 7. GENERATOR DESKRIPSI AI
+  // ==========================================
   const buatDeskripsiAI = async () => {
     if (!form.nama) return alert("Mohon isi Nama Produk terlebih dahulu.")
     setSedangGenerateAI(true)
@@ -119,7 +137,9 @@ export default function Admin() {
     finally { setSedangGenerateAI(false) }
   }
 
+  // ==========================================
   // 8. SIMPAN & HAPUS PRODUK
+  // ==========================================
   const simpanProduk = async (e) => {
     e.preventDefault()
     if(skus.length === 0) return alert('Tambahkan minimal 1 varian produk!')
@@ -161,43 +181,101 @@ export default function Admin() {
     if (confirm('Hapus produk secara permanen?')) { await supabase.from('products').delete().eq('id', id); muatData() }
   }
 
-  // 9. HELPER UI
+  // ==========================================
+  // 9. LOGIKA GRAFIK & ANALITIK UI
+  // ==========================================
   const getStatusColor = (status) => status === 'Pre-Order' ? 'badge-warning' : status === 'Sold Out' ? 'badge-danger' : 'badge-success'
   const totalNilaiAset = daftarProduk.reduce((total, p) => total + (p.harga * (p.stok || 0)), 0)
+
+  // Mesin Pemroses Data Grafik 7 Hari Terakhir
+  const hitungDataGrafik = () => {
+    const dataHarian = {}
+    const labelHarian = []
+    
+    // Siapkan wadah 7 hari terakhir
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date()
+      d.setDate(d.getDate() - i)
+      const tglStr = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+      dataHarian[tglStr] = 0
+      labelHarian.push(tglStr)
+    }
+
+    // Masukkan data klik ke wadah yang sesuai
+    daftarKlik.forEach(klik => {
+      const d = new Date(klik.clicked_at)
+      const tglStr = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+      if (dataHarian[tglStr] !== undefined) {
+        dataHarian[tglStr]++
+      }
+    })
+
+    const dataNilai = labelHarian.map(lbl => dataHarian[lbl])
+    const maxVal = Math.max(...dataNilai, 5) // Minimal tinggi skala adalah 5
+
+    return { labelHarian, dataNilai, maxVal }
+  }
+
+  const grafikData = hitungDataGrafik()
 
   return (
     <div className="app-container">
       {/* SIDEBAR NAVIGATION */}
       <nav className="sidebar-nav">
-        <div className="brand-logo"><span className="logo-text">AM</span></div>
+        <div className="brand-logo"><span className="logo-text">AM Admin</span></div>
         <div className="nav-links">
           <button className={`nav-btn ${tabAktif === 'dashboard' ? 'active' : ''}`} onClick={() => setTabAktif('dashboard')}><Icon path="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><span className="nav-label">Dashboard</span></button>
           <button className={`nav-btn ${tabAktif === 'products' ? 'active' : ''}`} onClick={() => setTabAktif('products')}><Icon path="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><span className="nav-label">Katalog</span></button>
-          <button className={`nav-btn ${tabAktif === 'orders' ? 'active' : ''}`} onClick={() => setTabAktif('orders')}><Icon path="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8" /><span className="nav-label">Pesanan Masuk</span></button>
-          <button className={`nav-btn ${tabAktif === 'settings' ? 'active' : ''}`} onClick={() => setTabAktif('settings')}><Icon path="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2z" /><span className="nav-label">Master Data</span></button>
+          <button className={`nav-btn ${tabAktif === 'orders' ? 'active' : ''}`} onClick={() => setTabAktif('orders')}><Icon path="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8" /><span className="nav-label">Pesanan</span></button>
+          <button className={`nav-btn ${tabAktif === 'settings' ? 'active' : ''}`} onClick={() => setTabAktif('settings')}><Icon path="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /><span className="nav-label">Master</span></button>
         </div>
       </nav>
 
       {/* MAIN CONTENT AREA */}
       <main className="main-content">
         <div className="scroll-area">
-          <header className="page-header"><h1 className="page-title">{tabAktif === 'products' ? 'Manajemen Katalog' : tabAktif === 'settings' ? 'Master Data' : tabAktif === 'orders' ? 'Log Pesanan' : 'Dashboard Ringkasan'}</h1></header>
+          <header className="page-header"><h1 className="page-title">{tabAktif === 'products' ? 'Manajemen Katalog' : tabAktif === 'settings' ? 'Master Data' : tabAktif === 'orders' ? 'Log Pesanan' : 'Dashboard Analitik'}</h1></header>
 
           {sedangMemuat ? (
             <div className="loading-wrapper"><div className="spinner"></div></div>
           ) : (
             <div className="content-inner">
               
-              {/* TAB 1: DASHBOARD RINGKASAN */}
+              {/* TAB 1: DASHBOARD & GRAFIK ANALITIK (BARU) */}
               {tabAktif === 'dashboard' && (
-                <div className="dashboard-stats">
-                  <div className="stat-box">
-                    <div className="stat-icon-wrap"><Icon path="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" size={24} /></div>
-                    <div><p className="stat-title">Total Produk Aktif</p><h2 className="stat-number">{daftarProduk.length} Item</h2></div>
+                <div className="dashboard-layout">
+                  <div className="dashboard-stats">
+                    <div className="stat-box">
+                      <div className="stat-icon-wrap"><Icon path="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" size={24} /></div>
+                      <div><p className="stat-title">Total Produk Aktif</p><h2 className="stat-number">{daftarProduk.length} Item</h2></div>
+                    </div>
+                    <div className="stat-box">
+                      <div className="stat-icon-wrap"><Icon path="M12 2v20 M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" size={24} /></div>
+                      <div><p className="stat-title">Estimasi Valuasi Aset</p><h2 className="stat-number">Rp {totalNilaiAset.toLocaleString('id-ID')}</h2></div>
+                    </div>
                   </div>
-                  <div className="stat-box">
-                    <div className="stat-icon-wrap"><Icon path="M12 2v20 M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" size={24} /></div>
-                    <div><p className="stat-title">Estimasi Valuasi Aset</p><h2 className="stat-number">Rp {totalNilaiAset.toLocaleString('id-ID')}</h2></div>
+
+                  {/* Tampilan Grafik Batang CSS murni */}
+                  <div className="chart-card">
+                    <div className="chart-header">
+                      <h3>Tren Konversi Tautan (7 Hari)</h3>
+                      <p>Jumlah klik konsumen ke tautan e-commerce Anda.</p>
+                    </div>
+                    
+                    <div className="bar-chart-container">
+                      {grafikData.labelHarian.map((lbl, i) => {
+                        const tinggiPersen = (grafikData.dataNilai[i] / grafikData.maxVal) * 100
+                        return (
+                          <div key={lbl} className="bar-wrapper">
+                            <div className="bar-value">{grafikData.dataNilai[i]}</div>
+                            <div className="bar-track">
+                              <div className="bar-fill" style={{ height: `${tinggiPersen}%` }}></div>
+                            </div>
+                            <div className="bar-label">{lbl}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 </div>
               )}
@@ -223,7 +301,7 @@ export default function Admin() {
                             <span className="text-category">{p.kategori || 'Koleksi'}</span>
                             <div className="meta-right">
                               <span className="text-stock">{p.stok || 0} Pcs</span>
-                              <span className={`status-badge ${getStatusColor(p.status || 'Tersedia')}`}>{p.status || 'Tersedia'}</span>
+                              <span className={`status-badge \${getStatusColor(p.status || 'Tersedia')}`}>{p.status || 'Tersedia'}</span>
                             </div>
                           </div>
                           <h3 className="card-title">{p.nama}</h3>
@@ -269,7 +347,7 @@ export default function Admin() {
                 )
               )}
 
-              {/* TAB 4: MASTER DATA KATEGORI */}
+              {/* TAB 4: MASTER DATA */}
               {tabAktif === 'settings' && (
                 <div className="settings-layout">
                   <div className="card-glass">
@@ -278,7 +356,7 @@ export default function Admin() {
                       <div><h3>Manajemen Kategori</h3><p>Kategorikan produk untuk mempermudah pencarian.</p></div>
                     </div>
                     <form onSubmit={tambahKategori} className="input-group-mobile">
-                      <input type="text" placeholder="Cth: Blazer, Sepatu..." value={inputKategoriBaru} onChange={e => setInputKategoriBaru(e.target.value)} required />
+                      <input type="text" placeholder="Cth: Sepatu..." value={inputKategoriBaru} onChange={e => setInputKategoriBaru(e.target.value)} required />
                       <button type="submit" className="btn-secondary">Simpan</button>
                     </form>
                     <div className="list-group">
@@ -298,11 +376,11 @@ export default function Admin() {
         </div>
       </main>
 
-      {/* FAB TOMBOL TAMBAH UNTUK MOBILE */}
+      {/* FAB TAMBAH MOBILE */}
       {tabAktif === 'products' && <button className="fab" onClick={() => bukaModal()}><Icon path="M12 5v14 M5 12h14" size={24} /></button>}
 
       {/* =======================================================
-          MODAL FORMULIR TAMBAH / EDIT PRODUK LENGKAP
+          MODAL TAMBAH/EDIT PRODUK
       ======================================================= */}
       {modalTerbuka && (
         <div className="drawer-overlay">
@@ -329,16 +407,16 @@ export default function Admin() {
                     {daftarKategori.map(kat => <option key={kat.id} value={kat.nama}>{kat.nama}</option>)}
                   </select>
                 </div>
-                <div className="form-group"><label>Status Manual</label><select className="input-clean" value={form.status} onChange={e => setForm({...form, status: e.target.value})}><option value="Tersedia">Tersedia</option><option value="Pre-Order">Pre-Order</option></select></div>
+                <div className="form-group"><label>Status</label><select className="input-clean" value={form.status} onChange={e => setForm({...form, status: e.target.value})}><option value="Tersedia">Tersedia</option><option value="Pre-Order">Pre-Order</option></select></div>
               </div>
 
-              {/* SKU BUILDER (VARIAN & UKURAN) */}
+              {/* SKU BUILDER */}
               <div className="sku-builder">
                 <div className="sku-header"><label>Atur Varian, Ukuran & Stok</label><button type="button" className="btn-add-sku" onClick={tambahSku}>+ Tambah Baris</button></div>
                 {skus.map((sku) => (
                   <div key={sku.id} className="sku-row">
-                    <input type="text" placeholder="Varian (Cth: Hitam)" className="input-clean flex-2" value={sku.varian} onChange={e => ubahSku(sku.id, 'varian', e.target.value)} required />
-                    <input type="text" placeholder="Ukuran (Cth: L)" className="input-clean flex-1" value={sku.ukuran} onChange={e => ubahSku(sku.id, 'ukuran', e.target.value)} required />
+                    <input type="text" placeholder="Motif/Warna" className="input-clean flex-2" value={sku.varian} onChange={e => ubahSku(sku.id, 'varian', e.target.value)} required />
+                    <input type="text" placeholder="Size" className="input-clean flex-1" value={sku.ukuran} onChange={e => ubahSku(sku.id, 'ukuran', e.target.value)} required />
                     <input type="number" placeholder="Stok" className="input-clean flex-1 text-center" value={sku.stok} onChange={e => ubahSku(sku.id, 'stok', e.target.value)} min="0" required />
                     {skus.length > 1 && <button type="button" className="btn-remove-sku" onClick={() => hapusSku(sku.id)}>✕</button>}
                   </div>
@@ -350,11 +428,7 @@ export default function Admin() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
                   <label style={{ margin: 0 }}>Deskripsi Lengkap</label>
                   <button type="button" className="btn-ai" onClick={buatDeskripsiAI} disabled={sedangGenerateAI}>
-                    {sedangGenerateAI ? (
-                      <><div className="spinner-small" style={{ borderColor: 'rgba(10,17,14,0.3)', borderTopColor: '#0A110E' }}></div> Merangkai kata...</>
-                    ) : (
-                      <>✨ Buat dengan AI</>
-                    )}
+                    {sedangGenerateAI ? <><div className="spinner-small" style={{ borderColor: 'rgba(10,17,14,0.3)', borderTopColor: '#0A110E' }}></div> Merangkai kata...</> : <>✨ Buat dengan AI</>}
                   </button>
                 </div>
                 <textarea className="input-clean" rows="4" value={form.deskripsi} onChange={e => setForm({...form, deskripsi: e.target.value})} required placeholder="Ketik manual atau gunakan tombol AI di atas..."></textarea>
@@ -367,7 +441,7 @@ export default function Admin() {
                 <div className="toggle-row">
                   <div>
                     <strong>Pemesanan via WhatsApp</strong>
-                    <p>Pembeli bisa mengisi form alamat & order via WA.</p>
+                    <p>Pembeli bisa mengisi form order via WA.</p>
                   </div>
                   <label className="toggle-switch">
                     <input type="checkbox" checked={form.wa_aktif} onChange={e => setForm({...form, wa_aktif: e.target.checked})} />
@@ -384,11 +458,7 @@ export default function Admin() {
                   {linkEcommerce.map(link => (
                     <div key={link.id} className="ecommerce-row">
                       <select className="input-clean flex-1" value={link.nama} onChange={e => ubahLink(link.id, 'nama', e.target.value)}>
-                        <option value="Shopee">Shopee</option>
-                        <option value="Tokopedia">Tokopedia</option>
-                        <option value="Lazada">Lazada</option>
-                        <option value="Tiktok Shop">Tiktok Shop</option>
-                        <option value="Website">Website Lain</option>
+                        <option value="Shopee">Shopee</option><option value="Tokopedia">Tokopedia</option><option value="Lazada">Lazada</option><option value="Tiktok Shop">Tiktok Shop</option><option value="Website Lain">Website Lain</option>
                       </select>
                       <input type="url" placeholder="https://shopee.co.id/..." className="input-clean flex-2" value={link.url} onChange={e => ubahLink(link.id, 'url', e.target.value)} required />
                       <button type="button" className="btn-remove-sku" onClick={() => hapusLink(link.id)}>✕</button>
@@ -420,25 +490,46 @@ export default function Admin() {
         </div>
       )}
 
-      {/* --- KUMPULAN CSS --- */}
+      {/* --- KUMPULAN CSS LENGKAP --- */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; } body { margin: 0; background: #0A110E; color: #E8ECEA; font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent;}
-        .app-container { display: flex; height: 100vh; overflow: hidden; }
-        .sidebar-nav { display: none; }
+        
+        .app-container { display: flex; height: 100vh; overflow: hidden; flex-direction: column; padding-bottom: 70px; }
+        
+        .sidebar-nav { position: fixed; bottom: 0; left: 0; width: 100%; height: 70px; display: flex; padding: 0 16px; justify-content: space-around; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); z-index: 50; background: rgba(10,17,14,0.95); backdrop-filter: blur(10px); }
+        .brand-logo { display: none; }
+        .nav-links { display: flex; width: 100%; justify-content: space-around; align-items: center; }
+        .nav-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; background: transparent; border: none; color: #8CA69D; padding: 8px; cursor: pointer; transition: 0.2s; font-family: inherit; }
+        .nav-btn.active { color: #E2C792; }
+        .nav-label { font-size: 10px; font-weight: 600; display: block; }
+
         .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
         .scroll-area { flex: 1; overflow-y: auto; padding: 0 20px 40px; }
         .page-header { padding: 32px 0 24px; } .page-title { font-size: 24px; font-weight: 700; color: #FFF; margin: 0; }
         .toolbar { margin-bottom: 24px; } .search-bar { display: flex; align-items: center; background: #121C18; border: 1px solid rgba(255,255,255,0.1); padding: 14px; border-radius: 14px; }
         .search-bar input { background: transparent; border: none; color: #FFF; width: 100%; outline: none; margin-left: 10px; font-family: inherit;}
         
-        /* Dashboard & Orders */
-        .dashboard-stats { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 24px;}
+        /* Dashboard, Chart & Orders */
+        .dashboard-layout { display: flex; flex-direction: column; gap: 24px; }
+        .dashboard-stats { display: flex; gap: 24px; flex-wrap: wrap; }
         .stat-box { background: #121C18; border: 1px solid rgba(255,255,255,0.04); border-radius: 24px; padding: 32px; flex: 1; min-width: 250px; display: flex; align-items: flex-start; gap: 24px; }
         .stat-icon-wrap { background: rgba(226,199,146,0.1); color: #E2C792; padding: 16px; border-radius: 16px; }
         .stat-title { font-size: 14px; color: #8CA69D; margin: 0 0 8px 0; }
         .stat-number { font-size: 28px; font-weight: 700; color: #FFF; margin: 0; word-wrap: break-word; }
         
+        /* GAYA UNTUK GRAFIK BAR MURNI CSS */
+        .chart-card { background: #121C18; border: 1px solid rgba(255,255,255,0.04); border-radius: 24px; padding: 24px; display: flex; flex-direction: column; gap: 24px;}
+        .chart-header h3 { margin: 0 0 4px 0; font-size: 16px; color: #FFF; }
+        .chart-header p { margin: 0; font-size: 13px; color: #8CA69D; }
+        .bar-chart-container { display: flex; justify-content: space-between; align-items: flex-end; height: 180px; padding-top: 20px;}
+        .bar-wrapper { display: flex; flex-direction: column; align-items: center; gap: 8px; flex: 1; height: 100%;}
+        .bar-value { font-size: 11px; color: #FFF; font-weight: 600; opacity: 0; transition: 0.3s; transform: translateY(10px);}
+        .bar-wrapper:hover .bar-value { opacity: 1; transform: translateY(0);}
+        .bar-track { width: 30px; flex: 1; background: rgba(255,255,255,0.02); border-radius: 6px; display: flex; align-items: flex-end; overflow: hidden; position: relative;}
+        .bar-fill { width: 100%; background: linear-gradient(to top, #D4AF37, #E2C792); border-radius: 6px; transition: height 0.5s ease-out; }
+        .bar-label { font-size: 10px; color: #8CA69D; font-weight: 500; text-align: center; }
+
         .order-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
         .order-card { background: #121C18; border: 1px solid rgba(255,255,255,0.04); border-radius: 20px; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
         .order-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 12px; }
@@ -450,13 +541,13 @@ export default function Admin() {
 
         /* Master Data Settings */
         .settings-layout { display: flex; flex-direction: column; gap: 24px; max-width: 100%; }
-        .card-glass { background: #121C18; border: 1px solid rgba(255,255,255,0.04); border-radius: 20px; padding: 32px; }
+        .card-glass { background: #121C18; border: 1px solid rgba(255,255,255,0.04); border-radius: 20px; padding: 20px; }
         .card-glass-header { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 24px; color: #E2C792; }
         .card-glass-header h3 { margin: 0 0 6px 0; font-size: 18px; color: #FFF; }
         .card-glass-header p { margin: 0; font-size: 13px; color: #8CA69D; }
-        .input-group-mobile { display: flex; gap: 12px; margin-bottom: 24px; }
-        .input-group-mobile input { flex: 1; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #FFF; padding: 14px 16px; border-radius: 12px; outline: none; font-family: inherit; }
-        .btn-secondary { background: rgba(255,255,255,0.05); color: #FFF; border: 1px solid rgba(255,255,255,0.1); padding: 14px 20px; border-radius: 12px; font-weight: 500; cursor: pointer; }
+        .input-group-mobile { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+        .input-group-mobile input { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #FFF; padding: 14px 16px; border-radius: 12px; outline: none; font-family: inherit; }
+        .btn-secondary { background: rgba(255,255,255,0.05); color: #FFF; border: 1px solid rgba(255,255,255,0.1); padding: 14px 20px; border-radius: 12px; font-weight: 500; cursor: pointer; width: 100%; }
         .list-group { display: flex; flex-direction: column; gap: 8px; }
         .list-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; background: rgba(255,255,255,0.02); border-radius: 12px; font-size: 14px; border: 1px solid rgba(255,255,255,0.02); }
         .btn-icon-only { background: none; border: none; color: #666; cursor: pointer; }
@@ -485,14 +576,14 @@ export default function Admin() {
         .action-icons { display: flex; gap: 8px; }
         .icon-btn { width: 36px; height: 36px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); background: transparent; color: #8CA69D; cursor: pointer; display: flex; justify-content: center; align-items: center; }
         .icon-btn.danger { color: #EF4444; border-color: rgba(239,68,68,0.2); }
-        .fab { position: fixed; bottom: 24px; right: 24px; width: 60px; height: 60px; background: #E2C792; color: #0A110E; border: none; border-radius: 20px; display: flex; justify-content: center; align-items: center; z-index: 40; box-shadow: 0 8px 24px rgba(226,199,146,0.3); }
+        .fab { position: fixed; bottom: 90px; right: 24px; width: 60px; height: 60px; background: #E2C792; color: #0A110E; border: none; border-radius: 20px; display: flex; justify-content: center; align-items: center; z-index: 40; box-shadow: 0 8px 24px rgba(226,199,146,0.3); }
         
-        /* MODAL */
+        /* MODAL DRAWER */
         .drawer-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 100; display: flex; justify-content: center; align-items: flex-end; }
-        .drawer-content { width: 100%; max-width: 600px; height: 95vh; background: #121C18; border-radius: 24px 24px 0 0; display: flex; flex-direction: column; }
+        .drawer-content { width: 100%; max-width: 600px; height: 95vh; background: #121C18; border-radius: 24px 24px 0 0; display: flex; flex-direction: column; animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
         .drawer-header { padding: 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .drawer-header h2 { margin: 0; font-size: 18px; color: #FFF; }
-        .btn-close { background: none; border: none; color: #8CA69D; cursor: pointer; }
+        .btn-close { background: none; border: none; color: #8CA69D; cursor: pointer; padding: 8px; }
         .form-layout { padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
         .form-group { display: flex; flex-direction: column; gap: 8px; }
         .form-group label { font-size: 13px; color: #8CA69D; }
@@ -541,16 +632,24 @@ export default function Admin() {
         
         .spinner-small { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #FFF; border-radius: 50%; animation: spin 1s linear infinite; }
         .spinner { width: 32px; height: 32px; border: 3px solid rgba(226,199,146,0.2); border-top-color: #E2C792; border-radius: 50%; animation: spin 1s linear infinite; margin: 20px auto; }
+        
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         @keyframes spin { to { transform: rotate(360deg); } }
         
+        /* DESKTOP VIEW */
         @media (min-width: 768px) {
-           .sidebar-nav { display: flex; width: 260px; flex-direction: column; background: #0E1613; padding: 24px; border-right: 1px solid rgba(255,255,255,0.05); }
-           .nav-links { display: flex; flex-direction: column; gap: 8px; margin-top: 32px;}
-           .nav-btn { display: flex; gap: 12px; padding: 12px; background: transparent; color: #8CA69D; border: none; border-radius: 12px; cursor: pointer; font-size: 15px; font-weight: 500;}
+           .app-container { flex-direction: row; padding-bottom: 0; }
+           .sidebar-nav { position: static; height: 100vh; display: flex; width: 260px; flex-direction: column; background: #0E1613; padding: 24px; border-right: 1px solid rgba(255,255,255,0.05); border-top: none; justify-content: flex-start; align-items: stretch; }
+           .brand-logo { display: block; margin-bottom: 40px; padding: 0 12px; }
+           .logo-text { font-size: 20px; font-weight: 700; color: #E2C792; letter-spacing: -0.5px; }
+           .nav-links { flex-direction: column; gap: 8px; margin-top: 32px; justify-content: flex-start; align-items: stretch; }
+           .nav-btn { flex-direction: row; gap: 12px; padding: 12px 16px; background: transparent; color: #8CA69D; border: none; border-radius: 12px; cursor: pointer; font-size: 15px; font-weight: 500; text-align: left; }
            .nav-btn.active { background: rgba(226,199,146,0.1); color: #E2C792; }
+           .nav-label { font-size: 15px; }
            .fab { display: none; }
            .form-row-mobile { flex-direction: row; }
            .input-group-mobile { flex-direction: row; }
+           .btn-secondary { width: auto; }
            .drawer-overlay { justify-content: flex-end; align-items: stretch;}
            .drawer-content { height: 100vh; border-radius: 24px 0 0 24px;}
         }

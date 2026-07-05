@@ -14,7 +14,6 @@ export default function Beranda() {
   const [modeCheckout, setModeCheckout] = useState(false)
   const [sedangMengirim, setSedangMengirim] = useState(false)
   
-  // State untuk Detail Produk (Galeri & Varian Aktif)
   const [gambarUtama, setGambarUtama] = useState('')
   const [form, setForm] = useState({ nama: '', whatsapp: '', alamat: '', varian: '', ukuran: '', jumlah: 1, catatan: '' })
 
@@ -44,6 +43,9 @@ export default function Beranda() {
 
   const aturJumlah = (aksi) => setForm(prev => ({ ...prev, jumlah: aksi === 'tambah' ? prev.jumlah + 1 : (prev.jumlah > 1 ? prev.jumlah - 1 : 1) }))
 
+  // ==========================================
+  // 1. MESIN PEREKAM PESANAN WA
+  // ==========================================
   const kirimKeWhatsApp = async (e) => {
     e.preventDefault()
     if (!form.nama || !form.whatsapp || !form.alamat || !form.varian || !form.ukuran) {
@@ -54,18 +56,51 @@ export default function Beranda() {
     setSedangMengirim(true)
     try {
       const hargaFinal = produkTerpilih.harga_diskon || produkTerpilih.harga
+      
+      // Simpan jejak pesanan ke Database Admin terlebih dahulu
+      await supabase.from('orders').insert([{
+        product_name: produkTerpilih.nama,
+        product_price: hargaFinal * form.jumlah,
+        customer_name: form.nama,
+        customer_phone: form.whatsapp,
+        size_selected: `${form.varian} - ${form.ukuran} (${form.jumlah} pcs)`,
+        shipping_address: form.alamat
+      }])
+      
+      // Susun pesan untuk WhatsApp
       const pesan = 
         `Halo Admin, saya memesan *${produkTerpilih.nama}*.\n\n` +
         `👤 *Data Pembeli:*\nNama: ${form.nama}\nWhatsApp: ${form.whatsapp}\nAlamat:\n${form.alamat}\n\n` +
         `🛍️ *Detail Produk:*\n- Varian: ${form.varian}\n- Ukuran: ${form.ukuran}\n- Jumlah: ${form.jumlah} Pcs\n- Harga Total: Rp ${(hargaFinal * form.jumlah).toLocaleString('id-ID')}\n\n` +
         `📝 *Catatan:*\n${form.catatan || '-'}`
 
-      const urlWhatsApp = `https://wa.me/6288218025773?text=${encodeURIComponent(pesan)}` // Ganti Nomor WA Anda
+      // PERHATIAN: Ganti nomor di bawah ini dengan nomor WA Admin asli Anda
+      const urlWhatsApp = `https://wa.me/6281234567890?text=${encodeURIComponent(pesan)}` 
+      
       setProdukTerpilih(null)
       setModeCheckout(false)
       window.open(urlWhatsApp, '_blank')
     } catch (error) { alert(error.message) } 
     finally { setSedangMengirim(false) }
+  }
+
+  // ==========================================
+  // 2. MESIN PEREKAM KLIK TAUTAN E-COMMERCE
+  // ==========================================
+  const rekamKlikLink = async (link) => {
+    // Buka aplikasi toko online di tab baru seketika agar pembeli tidak menunggu
+    window.open(link.url, '_blank')
+    
+    // Rekam aktivitas klik ke database secara diam-diam
+    try {
+      await supabase.from('link_clicks').insert([{
+        product_id: produkTerpilih.id,
+        product_name: produkTerpilih.nama,
+        link_name: link.nama
+      }])
+    } catch (error) {
+      console.error("Gagal merekam klik analitik:", error)
+    }
   }
 
   const getStatusColor = (status) => {
@@ -79,8 +114,6 @@ export default function Beranda() {
 
   return (
     <div className="store-wrapper">
-      
-      {/* HEADER & HERO */}
       <header className="store-header">
         <div className="header-top">
           <div><h1 className="brand-name">Atelier Mode</h1><p className="brand-tagline">Koleksi Sandang Eksklusif</p></div>
@@ -95,7 +128,6 @@ export default function Beranda() {
         </div>
       </header>
 
-      {/* KATALOG UTAMA (DIKEMBALIKAN DESAIN MEWAHNYA) */}
       <main className="main-catalog">
         <h3 className="section-title">Katalog Pilihan</h3>
         {sedangMemuat ? (
@@ -147,7 +179,6 @@ export default function Beranda() {
         )}
       </main>
 
-      {/* MODAL DETAIL PRODUK (GALERI & DESKRIPSI) */}
       {produkTerpilih && !modeCheckout && (
         <div className="modal-overlay">
           <div className="detail-sheet">
@@ -159,7 +190,6 @@ export default function Beranda() {
                 <img src={gambarUtama} alt="" className="detail-hero-image" />
               </div>
               
-              {/* Thumbnail Gallery */}
               {produkTerpilih.galeri && produkTerpilih.galeri.length > 1 && (
                 <div className="thumbnail-row">
                   {produkTerpilih.galeri.map((imgUrl, idx) => (
@@ -189,12 +219,12 @@ export default function Beranda() {
               </div>
             </div>
             
-            {/* OMNICHANNEL BOTTOM BAR */}
             <div className="sticky-bottom-bar">
+              {/* TOMBOL E-COMMERCE YANG SUDAH TERHUBUNG DENGAN ANALITIK */}
               {produkTerpilih.link_ecommerce && produkTerpilih.link_ecommerce.length > 0 && (
                 <div className="ecommerce-btn-group">
                   {produkTerpilih.link_ecommerce.map(link => (
-                    <button key={link.id} className="btn-ecommerce" onClick={() => window.open(link.url, '_blank')}>
+                    <button key={link.id} className="btn-ecommerce" onClick={() => rekamKlikLink(link)}>
                       <Icon path="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z M3 6h18 M16 10a4 4 0 0 1-8 0" size={18} />
                       Beli via {link.nama}
                     </button>
@@ -212,7 +242,6 @@ export default function Beranda() {
         </div>
       )}
 
-      {/* MODAL FORM CHECKOUT WA */}
       {modeCheckout && produkTerpilih && (
         <div className="checkout-overlay">
           <div className="checkout-wrapper">
@@ -231,7 +260,6 @@ export default function Beranda() {
                 </div>
               </div>
 
-              {/* Pemilihan Varian (Motif/Warna) */}
               <section className="form-section">
                 <div className="section-header">
                   <div className="icon-wrap"><Icon path="M20 14.66V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5.34 M18 2l4 4-10 10H8v-4L18 2z" size={18} /></div>
@@ -247,7 +275,6 @@ export default function Beranda() {
                 </div>
               </section>
 
-              {/* Pemilihan Ukuran */}
               <section className={`form-section ${!form.varian ? 'disabled-section' : ''}`}>
                 <div className="section-header">
                   <div className="icon-wrap"><Icon path="M6 9l6 6 6-6" size={18} /></div>
@@ -271,7 +298,6 @@ export default function Beranda() {
                 )}
               </section>
 
-              {/* Data Pengiriman */}
               <section className="form-section">
                 <div className="section-header">
                   <div className="icon-wrap"><Icon path="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" size={18} /></div>
@@ -317,7 +343,6 @@ export default function Beranda() {
         </div>
       )}
 
-      {/* --- CSS (DIKEMBALIKAN FULL TANPA MINIFIKASI EKSTREM) --- */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -335,7 +360,6 @@ export default function Beranda() {
         .hero-title { font-size: 32px; margin: 16px 0; line-height: 1.2; font-weight: 700; color: #FFF; letter-spacing: -1px; }
         .hero-circle-decoration { position: absolute; right: -40px; bottom: -40px; width: 160px; height: 160px; background: rgba(226,199,146,0.03); border-radius: 50%; z-index: 1; border: 1px solid rgba(226,199,146,0.1); }
         
-        /* KATALOG UTAMA (VERSI MEWAH KEMBALI) */
         .main-catalog { padding: 0 24px; max-width: 1200px; margin: 0 auto; }
         .section-title { font-size: 20px; font-weight: 600; margin-bottom: 24px; color: #FFF; }
         .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
@@ -364,7 +388,6 @@ export default function Beranda() {
         .action-btn { background: rgba(226,199,146,0.1); color: #E2C792; border: 1px solid rgba(226,199,146,0.2); padding: 8px 20px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.2s; }
         .action-btn.disabled { background: rgba(255,255,255,0.05); color: #666; border-color: transparent; cursor: not-allowed; }
 
-        /* MODAL DETAIL SHEET */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); display: flex; flex-direction: column; justify-content: flex-end; z-index: 9999; }
         .detail-sheet { background: #0A110E; width: 100%; height: 90vh; border-top-left-radius: 32px; border-top-right-radius: 32px; display: flex; flex-direction: column; position: relative; animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); border-top: 1px solid rgba(255,255,255,0.05); }
         .sheet-handle { width: 100%; height: 30px; display: flex; justify-content: center; align-items: center; cursor: pointer; position: absolute; top: 0; z-index: 10; }
@@ -375,7 +398,6 @@ export default function Beranda() {
         .detail-image-container { width: 100%; height: 350px; background: #0E1613; border-top-left-radius: 32px; border-top-right-radius: 32px; overflow: hidden; }
         .detail-hero-image { width: 100%; height: 100%; object-fit: cover; }
         
-        /* Thumbnails */
         .thumbnail-row { display: flex; gap: 12px; padding: 16px 24px 0 24px; overflow-x: auto; }
         .thumbnail-img { width: 60px; height: 60px; border-radius: 12px; object-fit: cover; opacity: 0.5; cursor: pointer; border: 2px solid transparent; transition: 0.2s;}
         .thumbnail-img.active { opacity: 1; border-color: #E2C792; }
@@ -389,14 +411,12 @@ export default function Beranda() {
         .detail-description-box h4 { font-size: 16px; color: #FFF; margin: 0 0 12px 0; }
         .detail-description-text { font-size: 14px; color: #8CA69D; line-height: 1.6; margin: 0; white-space: pre-wrap; }
         
-        /* OMNICHANNEL BOTTOM BAR */
         .sticky-bottom-bar { position: absolute; bottom: 0; left: 0; width: 100%; padding: 16px 24px 24px 24px; background: linear-gradient(to top, #0A110E 80%, transparent); display: flex; flex-direction: column; gap: 12px;}
         .ecommerce-btn-group { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; }
         .btn-ecommerce { flex-shrink: 0; background: rgba(226,199,146,0.05); border: 1px solid rgba(226,199,146,0.3); color: #E2C792; padding: 14px 20px; border-radius: 16px; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; cursor: pointer; transition: 0.2s; }
         .btn-ecommerce:active { background: rgba(226,199,146,0.15); }
         .btn-primary { width: 100%; background: #E2C792; color: #0A110E; border: none; padding: 16px; border-radius: 20px; font-weight: 700; font-size: 16px; display: flex; justify-content: center; align-items: center; gap: 10px; cursor: pointer; box-shadow: 0 4px 15px rgba(226,199,146,0.2); }
 
-        /* CHECKOUT FULL SCREEN */
         .checkout-overlay { position: fixed; inset: 0; background: #0A110E; z-index: 9999; display: flex; justify-content: center; animation: slideLeft 0.3s ease; }
         .checkout-wrapper { width: 100%; max-width: 600px; display: flex; flex-direction: column; height: 100%; }
         .checkout-header { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: rgba(10, 17, 14, 0.9); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255,255,255,0.05); z-index: 10; }
